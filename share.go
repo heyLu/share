@@ -26,6 +26,7 @@ const (
 )
 
 var UploadsLimiter = NewRateLimiter(UploadsLimit, 100)
+var Stats = NewByNameCounter(100)
 
 var config struct {
 	BaseURL      string
@@ -67,6 +68,8 @@ func main() {
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
+
+		Stats.Count("/")
 
 		errorMsg := req.URL.Query().Get("error")
 		if errorMsg != "" {
@@ -133,6 +136,7 @@ func main() {
 		}
 
 		if UploadsLimiter.IsLimited(hashIP(req)) {
+			Stats.Count("rate-limit")
 			logRequest(req, http.StatusTooManyRequests, "")
 			w.Header().Set("Retry-After", time.Now().Add(UploadsLimit).UTC().String())
 			http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
@@ -210,6 +214,7 @@ func main() {
 			return
 		}
 
+		Stats.Count("upload")
 		logRequest(req, http.StatusSeeOther, "")
 		w.Header().Set("Location", fmt.Sprintf("/dl/%s/%s?dl=false", id, uploadInfo.FileName))
 		w.WriteHeader(http.StatusSeeOther)
@@ -264,6 +269,7 @@ func main() {
 		}
 
 		if req.URL.Query().Get("dl") == "false" {
+			Stats.Count("visit-" + id)
 			logRequest(req, http.StatusOK, "")
 			filePart := ""
 			if len(parts) == 3 {
@@ -293,6 +299,8 @@ func main() {
 		if err != nil {
 			log.Printf("could not write response: %s", err)
 		}
+
+		Stats.Count("dl-" + id)
 	})
 
 	if config.AdminSecret != "" {
@@ -317,8 +325,12 @@ func main() {
 				return
 			}
 
+			fmt.Fprintf(w, "%d visits, %d uploads\n", Stats.Get("/"), Stats.Get("upload"))
+			fmt.Fprintf(w, "%d rate limits\n", Stats.Get("rate-limit"))
+			fmt.Fprintln(w)
+
 			for _, upload := range uploads {
-				fmt.Fprintf(w, "- %s/dl/%s/%s (%s)\n", config.BaseURL, upload.ID, upload.FileName, formatBytes(upload.Size))
+				fmt.Fprintf(w, "- %s/dl/%s/%s (%s, %d visits, %d downloads)\n", config.BaseURL, upload.ID, upload.FileName, formatBytes(upload.Size), Stats.Get("visit-"+upload.ID), Stats.Get("dl-"+upload.ID))
 			}
 			logRequest(req, http.StatusOK, "")
 		})
@@ -487,4 +499,39 @@ func (rl *RateLimiter) IsLimited(id string) bool {
 	rl.visits[id] = time.Now()
 	return false
 
+}
+
+type ByNameCounter struct {
+	countsByName map[string]int
+	maxCounts    int
+	mu           sync.Mutex
+}
+
+func NewByNameCounter(maxCounts int) *ByNameCounter {
+	return &ByNameCounter{
+		countsByName: make(map[string]int, maxCounts),
+		maxCounts:    maxCounts,
+	}
+}
+
+func (c *ByNameCounter) Count(name string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if len(c.countsByName) > c.maxCounts {
+		for key := range c.countsByName {
+			if key != name {
+				delete(c.countsByName, key)
+				break
+			}
+		}
+	}
+
+	c.countsByName[name] += 1
+}
+
+func (c *ByNameCounter) Get(name string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.countsByName[name]
 }
