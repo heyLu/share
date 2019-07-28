@@ -128,6 +128,9 @@ func main() {
 	})
 
 	http.HandleFunc("/up", func(w http.ResponseWriter, req *http.Request) {
+		req.Body = CountingReadCloser(req.Body, func(n int) { Stats.Add("bytes-received", n) })
+		w = CountingResponseWriter(w, func(n int) { Stats.Add("bytes-written", n) })
+
 		req.Body = http.MaxBytesReader(w, req.Body, MaxUploadSize+1*MegaBytes)
 
 		if req.Method != http.MethodPost {
@@ -222,6 +225,9 @@ func main() {
 	})
 
 	http.HandleFunc("/dl/", func(w http.ResponseWriter, req *http.Request) {
+		req.Body = CountingReadCloser(req.Body, func(n int) { Stats.Add("bytes-received", n) })
+		w = CountingResponseWriter(w, func(n int) { Stats.Add("bytes-written", n) })
+
 		parts := strings.SplitN(req.URL.Path[1:], "/", 3)
 		if len(parts) < 2 || parts[1] == "" {
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
@@ -327,6 +333,9 @@ func main() {
 
 			fmt.Fprintf(w, "%d visits, %d uploads\n", Stats.Get("/"), Stats.Get("upload"))
 			fmt.Fprintf(w, "%d rate limits\n", Stats.Get("rate-limit"))
+			fmt.Fprintf(w, "%s received, %s written\n",
+				formatBytes(int64(Stats.Get("bytes-received"))),
+				formatBytes(int64(Stats.Get("bytes-written"))))
 			fmt.Fprintln(w)
 
 			for _, upload := range uploads {
@@ -515,6 +524,10 @@ func NewByNameCounter(maxCounts int) *ByNameCounter {
 }
 
 func (c *ByNameCounter) Count(name string) {
+	c.Add(name, 1)
+}
+
+func (c *ByNameCounter) Add(name string, n int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -527,7 +540,7 @@ func (c *ByNameCounter) Count(name string) {
 		}
 	}
 
-	c.countsByName[name] += 1
+	c.countsByName[name] += n
 }
 
 func (c *ByNameCounter) Get(name string) int {
