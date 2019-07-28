@@ -1,8 +1,0 @@
-[Unit]
-Description=share - simple filesharing service
-
-[Service]
-ExecStart=BASE_URL=http://localhost:9999 ./share
-
-[Install]
-WantedBy=multi-user.target
