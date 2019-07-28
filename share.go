@@ -103,7 +103,7 @@ func main() {
 	
 	%s
 
-	<p>%s upload limit, files expire after 7 days.</p>
+	<p>%s upload limit, files expire after 14 days.</p>
 
 	<form method="POST" action="/up" enctype="multipart/form-data">
 		%s
