@@ -28,8 +28,9 @@ const (
 var UploadsLimiter = NewRateLimiter(UploadsLimit, 100)
 
 var config struct {
-	BaseURL string
-	Secret  string
+	BaseURL      string
+	UploadSecret string
+	AdminSecret  string
 }
 
 type UploadInfo struct {
@@ -37,6 +38,7 @@ type UploadInfo struct {
 	FileName     string    `json:"filename"`
 	ContentType  string    `json:"content-type"`
 	DateUploaded time.Time `json:"date-uploaded"`
+	Size         int64     `json:"-"`
 }
 
 func main() {
@@ -47,11 +49,17 @@ func main() {
 		config.BaseURL = fmt.Sprintf("http://%s", addr)
 	}
 
-	secret, err := ioutil.ReadFile("upload-secret.txt")
+	uploadSecret, err := ioutil.ReadFile("upload-secret.txt")
 	if err != nil && !os.IsNotExist(err) {
 		log.Fatal(err)
 	}
-	config.Secret = strings.TrimSpace(string(secret))
+	config.UploadSecret = strings.TrimSpace(string(uploadSecret))
+
+	adminSecret, err := ioutil.ReadFile("admin-secret.txt")
+	if err != nil && !os.IsNotExist(err) {
+		log.Fatal(err)
+	}
+	config.AdminSecret = strings.TrimSpace(string(adminSecret))
 
 	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		if req.URL.Path != "/" {
@@ -66,7 +74,7 @@ func main() {
 		}
 
 		secretInput := ""
-		if config.Secret != "" {
+		if config.UploadSecret != "" {
 			secretInput = `<input type="text" name="secret" placeholder="Key required for upload privileges..." />`
 		}
 
@@ -117,7 +125,7 @@ func main() {
 	})
 
 	http.HandleFunc("/up", func(w http.ResponseWriter, req *http.Request) {
-		req.Body = http.MaxBytesReader(w, req.Body, MaxUploadSize + 1*MegaBytes)
+		req.Body = http.MaxBytesReader(w, req.Body, MaxUploadSize+1*MegaBytes)
 
 		if req.Method != http.MethodPost {
 			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
@@ -138,7 +146,7 @@ func main() {
 			return
 		}
 
-		if config.Secret != req.FormValue("secret") {
+		if config.UploadSecret != req.FormValue("secret") {
 			http.Error(w, "uploads only allowed using upload secret", http.StatusForbidden)
 			return
 		}
@@ -287,6 +295,35 @@ func main() {
 		}
 	})
 
+	if config.AdminSecret != "" {
+		http.HandleFunc("/stats", func(w http.ResponseWriter, req *http.Request) {
+			username, password, ok := req.BasicAuth()
+			if !ok {
+				w.Header().Set("WWW-Authenticate", `Basic realm="admin"`)
+				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+				return
+			}
+			if username != "admin" && password != config.AdminSecret {
+				logRequest(req, http.StatusForbidden, "wrong username or password")
+				http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+				return
+			}
+
+			uploadsRepo := NewDirectoryUploadsRepo(UploadsDir)
+			uploads, err := uploadsRepo.List()
+			if err != nil {
+				logRequest(req, http.StatusInternalServerError, fmt.Sprintf("could not list uploads: %s", err))
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
+
+			for _, upload := range uploads {
+				fmt.Fprintf(w, "- %s/dl/%s/%s (%s)\n", config.BaseURL, upload.ID, upload.FileName, formatBytes(upload.Size))
+			}
+			logRequest(req, http.StatusOK, "")
+		})
+	}
+
 	http.HandleFunc("/validation.js", func(w http.ResponseWriter, req *http.Request) {
 		http.ServeFile(w, req, "./validation.js")
 	})
@@ -340,18 +377,90 @@ func formatBytes(bytes int64) string {
 	}
 }
 
+type UploadsRepository interface {
+	List() ([]UploadInfo, error)
+	GetInfo(id string) (*UploadInfo, error)
+}
+
+func NewDirectoryUploadsRepo(uploadsDirectory string) UploadsRepository {
+	return &directoryUploadsRepo{directory: uploadsDirectory}
+}
+
+type directoryUploadsRepo struct {
+	directory string
+}
+
+func (ur *directoryUploadsRepo) List() ([]UploadInfo, error) {
+	dir, err := os.Open(ur.directory)
+	if err != nil {
+		return nil, fmt.Errorf("could not open uploads directory: %s", err)
+	}
+
+	files, err := dir.Readdir(-1)
+	if err != nil {
+		return nil, fmt.Errorf("could not list uploads: %s", err)
+	}
+
+	uploads := make([]UploadInfo, 0, len(files)/2)
+	for _, fi := range files {
+		if !strings.HasSuffix(fi.Name(), "-info.json") {
+			continue
+		}
+
+		id := fi.Name()[:(len(fi.Name()) - len("-info.json"))]
+		info, err := ur.GetInfo(id)
+		if err != nil {
+			return nil, fmt.Errorf("could not read info for %s: %s", id, err)
+		}
+		if info == nil {
+			return nil, fmt.Errorf("could not find info for %s: %s", id, err)
+		}
+
+		stat, err := os.Lstat(path.Join(ur.directory, id))
+		if err != nil {
+			return nil, fmt.Errorf("could not lstat %s: %s", id, err)
+		}
+		info.Size = stat.Size()
+
+		uploads = append(uploads, *info)
+	}
+
+	return uploads, nil
+}
+
+func (ur *directoryUploadsRepo) GetInfo(id string) (*UploadInfo, error) {
+	f, err := os.Open(path.Join(ur.directory, id+"-info.json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+
+		return nil, fmt.Errorf("could not open info: %s", err)
+	}
+	defer f.Close()
+
+	var uploadInfo UploadInfo
+	dec := json.NewDecoder(f)
+	err = dec.Decode(&uploadInfo)
+	if err != nil {
+		return nil, fmt.Errorf("could not decode upload info: %s", err)
+	}
+
+	return &uploadInfo, nil
+}
+
 // RateLimiter limits something to be allowed only every duration.
 type RateLimiter struct {
-	visits map[string]time.Time
-	maxIDs int
+	visits      map[string]time.Time
+	maxIDs      int
 	minDuration time.Duration
-	mu sync.Mutex
+	mu          sync.Mutex
 }
 
 func NewRateLimiter(minDuration time.Duration, maxIDs int) *RateLimiter {
 	return &RateLimiter{
-		visits: make(map[string]time.Time, maxIDs),
-		maxIDs: maxIDs,
+		visits:      make(map[string]time.Time, maxIDs),
+		maxIDs:      maxIDs,
 		minDuration: minDuration,
 	}
 }
