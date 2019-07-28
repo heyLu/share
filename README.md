@@ -19,4 +19,5 @@
 - [x] upload rate limiting
 - [ ] set content type for downloads
 - [ ] delete files after N days
-- [ ] admin stats (rate limiting, uploads, num downloads)
+- [x] admin stats (rate limiting, uploads, num downloads)
+- [ ] password encryption (optional, encrypted with password on disk, crypto/aes?)
