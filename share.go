@@ -69,7 +69,7 @@ func main() {
 			return
 		}
 
-		Stats.Count("/")
+		Stats.Count("visit")
 
 		errorMsg := req.URL.Query().Get("error")
 		if errorMsg != "" {
@@ -274,6 +274,8 @@ func main() {
 			return
 		}
 
+		Stats.Count("visit")
+
 		if req.URL.Query().Get("dl") == "false" {
 			Stats.Count("visit-" + id)
 			logRequest(req, http.StatusOK, "")
@@ -331,7 +333,7 @@ func main() {
 				return
 			}
 
-			fmt.Fprintf(w, "%d visits, %d uploads\n", Stats.Get("/"), Stats.Get("upload"))
+			fmt.Fprintf(w, "%d visits, %d uploads\n", Stats.Get("visit"), Stats.Get("upload"))
 			fmt.Fprintf(w, "%d rate limits\n", Stats.Get("rate-limit"))
 			fmt.Fprintf(w, "%s received, %s written\n",
 				formatBytes(int64(Stats.Get("bytes-received"))),
