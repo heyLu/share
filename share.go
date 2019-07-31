@@ -341,7 +341,7 @@ func main() {
 			fmt.Fprintln(w)
 
 			for _, upload := range uploads {
-				fmt.Fprintf(w, "- %s/dl/%s/%s (%s, %d visits, %d downloads)\n", config.BaseURL, upload.ID, upload.FileName, formatBytes(upload.Size), Stats.Get("visit-"+upload.ID), Stats.Get("dl-"+upload.ID))
+				fmt.Fprintf(w, "- %s/dl/%s/%s (%s, %d views, %d downloads)\n", config.BaseURL, upload.ID, upload.FileName, formatBytes(upload.Size), Stats.Get("visit-"+upload.ID), Stats.Get("dl-"+upload.ID))
 			}
 			logRequest(req, http.StatusOK, "")
 		})
