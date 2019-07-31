@@ -8,14 +8,14 @@ import (
 var _ io.ReadCloser = &countingReader{}
 
 type countingReader struct {
-	       io.ReadCloser
+	io.ReadCloser
 	countFn func(bytesWritten int)
 }
 
 func CountingReadCloser(r io.ReadCloser, countFn func(int)) io.ReadCloser {
 	return &countingReader{
-		ReadCloser:       r,
-		countFn: countFn,
+		ReadCloser: r,
+		countFn:    countFn,
 	}
 }
 
@@ -33,7 +33,7 @@ type countingResponseWriter struct {
 func CountingResponseWriter(w http.ResponseWriter, countFn func(int)) http.ResponseWriter {
 	return &countingResponseWriter{
 		ResponseWriter: w,
-		countFn: countFn,
+		countFn:        countFn,
 	}
 }
 
