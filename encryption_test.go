@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -9,6 +11,8 @@ import (
 )
 
 func TestEncryptAndDecrypt(t *testing.T) {
+	HashCost = bcrypt.MinCost
+
 	testCases := []struct {
 		name            string
 		plaintext       string
@@ -20,8 +24,6 @@ func TestEncryptAndDecrypt(t *testing.T) {
 		{"encrypt and decrypt works", "this is my secret!", "password", "password", "", ""},
 		{"decrypt with wrong password", "this is my secret!", "password", "wrong", "", "hash does not match password"},
 	}
-
-	HashCost = bcrypt.MinCost
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -59,4 +61,112 @@ func expectErrorMatch(t *testing.T, errorMatch string, err error) {
 		}
 	}
 
+}
+
+func BenchmarkEncryptAndDecrypt(b *testing.B) {
+	HashCost = bcrypt.MinCost
+
+	inputFileName := os.Getenv("TEST_INPUT_FILE")
+	if inputFileName == "" {
+		b.Fatal("set TEST_INPUT_FILE to a big file to benchmark encryption")
+	}
+
+	// write a big file to disk for comparison
+	b.Run("write big file", func(b *testing.B) {
+		f, err := os.Open(inputFileName)
+		if err != nil {
+			b.Fatalf("could not open %q: %s", inputFileName, err)
+		}
+
+		out, err := os.OpenFile("bench-write", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
+		if err != nil {
+			b.Fatalf("could not create %q: %s", "bench-write", err)
+		}
+
+		_, err = io.Copy(out, f)
+		if err != nil {
+			b.Fatalf("could not write: %s", err)
+		}
+
+		err = out.Sync()
+		if err != nil {
+			b.Fatalf("could not sync: %s", err)
+		}
+
+		reportBytes(b, f)
+	})
+
+	password := "password"
+	var hashedPassword []byte
+
+	b.Run("encrypt", func(b *testing.B) {
+		f, err := os.Open(inputFileName)
+		if err != nil {
+			b.Fatalf("could not open %q: %s", inputFileName, err)
+		}
+
+		out, err := os.OpenFile("bench-encrypted", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
+		if err != nil {
+			b.Fatalf("could not create %q: %s", "bench-write", err)
+		}
+
+		hashedPassword, err = Encrypt(f, out, password)
+		if err != nil {
+			b.Fatalf("could not encrypt: %s", err)
+		}
+
+		err = out.Sync()
+		if err != nil {
+			b.Fatalf("could not sync: %s", err)
+		}
+
+		reportBytes(b, f)
+	})
+
+	b.Run("decrypt", func(b *testing.B) {
+		f, err := os.Open("bench-encrypted")
+		if err != nil {
+			b.Fatalf("could not open %q: %s", inputFileName, err)
+		}
+
+		out, err := os.OpenFile("bench-decrypted", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
+		if err != nil {
+			b.Fatalf("could not create %q: %s", "bench-write", err)
+		}
+
+		err = Decrypt(f, out, hashedPassword, password)
+		if err != nil {
+			b.Fatalf("could not decrypt: %s", err)
+		}
+
+		err = out.Sync()
+		if err != nil {
+			b.Fatalf("could not sync: %s", err)
+		}
+
+		reportBytes(b, f)
+	})
+
+	removeFile(b, "bench-write")
+	removeFile(b, "bench-encrypted")
+	removeFile(b, "bench-decrypted")
+}
+
+func reportBytes(b *testing.B, f *os.File) {
+	b.StopTimer()
+	defer b.StartTimer()
+	stat, err := f.Stat()
+	if err != nil {
+		b.Fatalf("could not stat: %s", err)
+	}
+	b.SetBytes(stat.Size())
+}
+
+func removeFile(b *testing.B, name string) {
+	b.StopTimer()
+	defer b.StartTimer()
+	err := os.Remove(name)
+	if err != nil {
+		b.Fatalf("could not remove %q: %s", name, err)
+	}
 }
