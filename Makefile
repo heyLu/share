@@ -1,5 +1,13 @@
-share: *.go
+share: build
+
+build: *.go
 	go build .
+
+test:
+	go test .
+
+clean:
+	rm -f share share.service
 
 RUN_USER := uploads
 
