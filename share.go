@@ -78,7 +78,10 @@ func main() {
 
 		secretInput := ""
 		if config.UploadSecret != "" {
-			secretInput = `<input type="text" name="secret" placeholder="Key required for upload privileges..." />`
+			secretInput = `<div class="field">
+	<label for="secret">Upload secret:</label>
+	<input type="text" name="secret" required placeholder="Secret required to upload" />
+</div>`
 		}
 
 		fmt.Fprintf(w, `
@@ -88,6 +91,10 @@ func main() {
 	<meta charset="utf-8" />
 	<title>share</title>
 	<style>
+	.field {
+		margin-bottom: 0.5em;
+	}
+
 	#error {
 		background-color: rgba(255, 0, 0, 10%%);
 		max-width: 20em;
@@ -107,7 +114,12 @@ func main() {
 
 	<form method="POST" action="/up" enctype="multipart/form-data">
 		%s
-		<input id="file" type="file" name="file" />
+
+		<div class="field">
+			<label for="file">File to upload:</label>
+			<input id="file" type="file" name="file" />
+		</div>
+
 		<input type="submit" value="Upload" />
 	</form>
 
