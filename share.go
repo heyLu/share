@@ -117,7 +117,7 @@ func main() {
 
 		<div class="field">
 			<label for="file">File to upload:</label>
-			<input id="file" type="file" name="file" />
+			<input id="file" type="file" required name="file" />
 		</div>
 
 		<input type="submit" value="Upload" />
