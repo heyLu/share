@@ -332,7 +332,7 @@ func main() {
 				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 				return
 			}
-			if username != "admin" && password != config.AdminSecret {
+			if username != "admin" || password != config.AdminSecret {
 				logRequest(req, http.StatusForbidden, "wrong username or password")
 				http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 				return
