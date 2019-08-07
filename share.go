@@ -19,19 +19,17 @@ import (
 )
 
 const (
-	MegaBytes     int64 = 1024 * 1024
-	MaxUploadSize int64 = 50 * MegaBytes
-	UploadsDir          = "uploads"
-	UploadsLimit        = 10 * time.Second
+	MegaBytes int64 = 1024 * 1024
 )
 
-var UploadsLimiter = NewRateLimiter(UploadsLimit, 100)
-var Stats = NewByNameCounter(100)
-
 var config struct {
-	BaseURL      string
-	UploadSecret string
-	AdminSecret  string
+	AdminSecret   string
+	Addr          string
+	BaseURL       string
+	UploadsDir    string
+	UploadSecret  string
+	UploadsLimit  time.Duration
+	MaxUploadSize int64
 }
 
 type UploadInfo struct {
@@ -43,11 +41,15 @@ type UploadInfo struct {
 }
 
 func main() {
-	addr := "localhost:9999"
+	config.Addr = "localhost:9999"
+
+	config.UploadsDir = "uploads"
+	config.UploadsLimit = 10 * time.Second
+	config.MaxUploadSize = 50 * MegaBytes
 
 	config.BaseURL = os.Getenv("BASE_URL")
 	if config.BaseURL == "" {
-		config.BaseURL = fmt.Sprintf("http://%s", addr)
+		config.BaseURL = fmt.Sprintf("http://%s", config.Addr)
 	}
 
 	uploadSecret, err := ioutil.ReadFile("upload-secret.txt")
@@ -62,6 +64,9 @@ func main() {
 	}
 	config.AdminSecret = strings.TrimSpace(string(adminSecret))
 
+	uploadsLimiter := NewRateLimiter(config.UploadsLimit, 100)
+	statsCounter := NewByNameCounter(100)
+
 	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		if req.URL.Path != "/" {
 			logRequest(req, http.StatusBadRequest, "")
@@ -69,7 +74,7 @@ func main() {
 			return
 		}
 
-		Stats.Count("visit")
+		statsCounter.Count("visit")
 
 		errorMsg := req.URL.Query().Get("error")
 		if errorMsg != "" {
@@ -137,29 +142,29 @@ func main() {
 	</script>
 </body>
 </html>
-		`, errorMsg, formatBytes(MaxUploadSize), secretInput, MaxUploadSize)
+		`, errorMsg, formatBytes(config.MaxUploadSize), secretInput, config.MaxUploadSize)
 	})
 
 	http.HandleFunc("/up", func(w http.ResponseWriter, req *http.Request) {
-		req.Body = CountingReadCloser(req.Body, func(n int) { Stats.Add("bytes-received", n) })
-		w = CountingResponseWriter(w, func(n int) { Stats.Add("bytes-written", n) })
+		req.Body = CountingReadCloser(req.Body, func(n int) { statsCounter.Add("bytes-received", n) })
+		w = CountingResponseWriter(w, func(n int) { statsCounter.Add("bytes-written", n) })
 
-		req.Body = http.MaxBytesReader(w, req.Body, MaxUploadSize+1*MegaBytes)
+		req.Body = http.MaxBytesReader(w, req.Body, config.MaxUploadSize+1*MegaBytes)
 
 		if req.Method != http.MethodPost {
 			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 			return
 		}
 
-		if UploadsLimiter.IsLimited(hashIP(req)) {
-			Stats.Count("rate-limit")
+		if uploadsLimiter.IsLimited(hashIP(req)) {
+			statsCounter.Count("rate-limit")
 			logRequest(req, http.StatusTooManyRequests, "")
-			w.Header().Set("Retry-After", time.Now().Add(UploadsLimit).UTC().String())
+			w.Header().Set("Retry-After", time.Now().Add(config.UploadsLimit).UTC().String())
 			http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
 			return
 		}
 
-		err := req.ParseMultipartForm(MaxUploadSize)
+		err := req.ParseMultipartForm(config.MaxUploadSize)
 		if err != nil {
 			logRequest(req, http.StatusBadRequest, fmt.Sprintf("file too big, tried to upload %s", formatBytes(req.ContentLength)))
 			http.Error(w, "file too big", http.StatusBadRequest)
@@ -179,7 +184,7 @@ func main() {
 		}
 		defer file.Close()
 
-		if header.Size > MaxUploadSize {
+		if header.Size > config.MaxUploadSize {
 			http.Error(w, "file too big", http.StatusBadRequest)
 			return
 		}
@@ -200,7 +205,7 @@ func main() {
 			DateUploaded: time.Now().Round(time.Second).UTC(),
 		}
 
-		uf, err := os.OpenFile(path.Join(UploadsDir, id+"-info.json"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+		uf, err := os.OpenFile(path.Join(config.UploadsDir, id+"-info.json"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 		if err != nil {
 			log.Printf("could not create info file: %s", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -216,7 +221,7 @@ func main() {
 			return
 		}
 
-		f, err := os.OpenFile(path.Join(UploadsDir, id), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+		f, err := os.OpenFile(path.Join(config.UploadsDir, id), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 		if err != nil {
 			log.Printf("could not create file: %s", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -230,7 +235,7 @@ func main() {
 			return
 		}
 
-		Stats.Count("upload")
+		statsCounter.Count("upload")
 		logRequest(req, http.StatusSeeOther, "")
 		w.Header().Set("Location", fmt.Sprintf("/dl/%s/%s?dl=false", id, uploadInfo.FileName))
 		w.WriteHeader(http.StatusSeeOther)
@@ -238,8 +243,8 @@ func main() {
 	})
 
 	http.HandleFunc("/dl/", func(w http.ResponseWriter, req *http.Request) {
-		req.Body = CountingReadCloser(req.Body, func(n int) { Stats.Add("bytes-received", n) })
-		w = CountingResponseWriter(w, func(n int) { Stats.Add("bytes-written", n) })
+		req.Body = CountingReadCloser(req.Body, func(n int) { statsCounter.Add("bytes-received", n) })
+		w = CountingResponseWriter(w, func(n int) { statsCounter.Add("bytes-written", n) })
 
 		parts := strings.SplitN(req.URL.Path[1:], "/", 3)
 		if len(parts) < 2 || parts[1] == "" {
@@ -251,7 +256,7 @@ func main() {
 		if strings.HasSuffix(id, ".json") {
 			id = id[:len(id)-len(".json")]
 
-			f, err := os.Open(path.Join(UploadsDir, id+"-info.json"))
+			f, err := os.Open(path.Join(config.UploadsDir, id+"-info.json"))
 			if err != nil {
 				if os.IsNotExist(err) {
 					logRequest(req, http.StatusNotFound, "")
@@ -287,10 +292,10 @@ func main() {
 			return
 		}
 
-		Stats.Count("visit")
+		statsCounter.Count("visit")
 
 		if req.URL.Query().Get("dl") == "false" {
-			Stats.Count("visit-" + id)
+			statsCounter.Count("visit-" + id)
 			logRequest(req, http.StatusOK, "")
 			filePart := ""
 			if len(parts) == 3 {
@@ -300,7 +305,7 @@ func main() {
 			return
 		}
 
-		f, err := os.Open(path.Join(UploadsDir, id))
+		f, err := os.Open(path.Join(config.UploadsDir, id))
 		if err != nil {
 			if os.IsNotExist(err) {
 				logRequest(req, http.StatusNotFound, "")
@@ -321,7 +326,7 @@ func main() {
 			log.Printf("could not write response: %s", err)
 		}
 
-		Stats.Count("dl-" + id)
+		statsCounter.Count("dl-" + id)
 	})
 
 	if config.AdminSecret != "" {
@@ -338,7 +343,7 @@ func main() {
 				return
 			}
 
-			uploadsRepo := NewDirectoryUploadsRepo(UploadsDir)
+			uploadsRepo := NewDirectoryUploadsRepo(config.UploadsDir)
 			uploads, err := uploadsRepo.List()
 			if err != nil {
 				logRequest(req, http.StatusInternalServerError, fmt.Sprintf("could not list uploads: %s", err))
@@ -346,15 +351,15 @@ func main() {
 				return
 			}
 
-			fmt.Fprintf(w, "%d visits, %d uploads\n", Stats.Get("visit"), Stats.Get("upload"))
-			fmt.Fprintf(w, "%d rate limits\n", Stats.Get("rate-limit"))
+			fmt.Fprintf(w, "%d visits, %d uploads\n", statsCounter.Get("visit"), statsCounter.Get("upload"))
+			fmt.Fprintf(w, "%d rate limits\n", statsCounter.Get("rate-limit"))
 			fmt.Fprintf(w, "%s received, %s written\n",
-				formatBytes(int64(Stats.Get("bytes-received"))),
-				formatBytes(int64(Stats.Get("bytes-written"))))
+				formatBytes(int64(statsCounter.Get("bytes-received"))),
+				formatBytes(int64(statsCounter.Get("bytes-written"))))
 			fmt.Fprintln(w)
 
 			for _, upload := range uploads {
-				fmt.Fprintf(w, "- %s/dl/%s/%s (%s, %d views, %d downloads)\n", config.BaseURL, upload.ID, upload.FileName, formatBytes(upload.Size), Stats.Get("visit-"+upload.ID), Stats.Get("dl-"+upload.ID))
+				fmt.Fprintf(w, "- %s/dl/%s/%s (%s, %d views, %d downloads)\n", config.BaseURL, upload.ID, upload.FileName, formatBytes(upload.Size), statsCounter.Get("visit-"+upload.ID), statsCounter.Get("dl-"+upload.ID))
 			}
 			logRequest(req, http.StatusOK, "")
 		})
@@ -365,7 +370,7 @@ func main() {
 	})
 
 	srv := &http.Server{
-		Addr:              addr,
+		Addr:              config.Addr,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	log.Printf("Listening on %s", config.BaseURL)
