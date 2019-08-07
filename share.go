@@ -18,9 +18,7 @@ import (
 	"time"
 )
 
-const (
-	MegaBytes int64 = 1024 * 1024
-)
+const MegaBytes int64 = 1024 * 1024
 
 var config struct {
 	AdminSecret   string
@@ -30,14 +28,6 @@ var config struct {
 	UploadSecret  string
 	UploadsLimit  time.Duration
 	MaxUploadSize int64
-}
-
-type UploadInfo struct {
-	ID           string    `json:"id"`
-	FileName     string    `json:"filename"`
-	ContentType  string    `json:"content-type"`
-	DateUploaded time.Time `json:"date-uploaded"`
-	Size         int64     `json:"-"`
 }
 
 func main() {
@@ -421,6 +411,14 @@ func formatBytes(bytes int64) string {
 type UploadsRepository interface {
 	List() ([]UploadInfo, error)
 	GetInfo(id string) (*UploadInfo, error)
+}
+
+type UploadInfo struct {
+	ID           string    `json:"id"`
+	FileName     string    `json:"filename"`
+	ContentType  string    `json:"content-type"`
+	DateUploaded time.Time `json:"date-uploaded"`
+	Size         int64     `json:"-"`
 }
 
 func NewDirectoryUploadsRepo(uploadsDirectory string) UploadsRepository {
