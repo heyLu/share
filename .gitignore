@@ -1,4 +1,5 @@
 share
+share-*
 share.service
 uploads/*
 upload-secret.txt
