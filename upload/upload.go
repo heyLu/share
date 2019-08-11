@@ -1,10 +1,8 @@
 package upload
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path"
 	"strings"
@@ -16,9 +14,7 @@ type Info struct {
 	FileName     string    `json:"filename"`
 	ContentType  string    `json:"content-type"`
 	DateUploaded time.Time `json:"date-uploaded"`
-
-	Size            int64  `json:"-"`
-	ContentFileName string `json:"-"`
+	Size         int64     `json:"-"`
 }
 
 type Repo interface {
@@ -66,8 +62,6 @@ func (ur *directoryRepo) List() ([]Info, error) {
 		}
 		info.Size = stat.Size()
 
-		info.ContentFileName = path.Join(ur.directory, id)
-
 		uploads = append(uploads, *info)
 	}
 
@@ -93,83 +87,4 @@ func (ur *directoryRepo) GetInfo(id string) (*Info, error) {
 	}
 
 	return &uploadInfo, nil
-}
-
-type Logger interface {
-	Printf(format string, args ...interface{})
-}
-
-func Deduplicate(repo Repo, logger Logger) error {
-	uploads, err := repo.List()
-	if err != nil {
-		return fmt.Errorf("could not list uploads: %s", err)
-	}
-
-	// maps sha256 hash to matching filenames
-	hashes := make(map[string][]string, len(uploads))
-	for i, upload := range uploads {
-		calculateSHA := func(fileName string) (string, error) {
-			f, err := os.Open(fileName)
-			if err != nil {
-				return "", fmt.Errorf("could not open %q: %s", fileName, err)
-			}
-			defer f.Close()
-
-			hash := sha256.New()
-			_, err = io.Copy(hash, f)
-			if err != nil {
-				return "", fmt.Errorf("could not calculate sha256 for %q: %s", fileName, err)
-			}
-
-			return fmt.Sprintf("%x", hash.Sum(nil)), nil
-		}
-
-		if logger != nil {
-			logger.Printf("%02d/%02d: calculating sha for %q (%d bytes)", i, len(uploads), upload.ContentFileName, upload.Size)
-		}
-
-		hash, err := calculateSHA(upload.ContentFileName)
-		if err != nil {
-			return err
-		}
-
-		_, ok := hashes[hash]
-		if ok {
-			hashes[hash] = append(hashes[hash], upload.ContentFileName)
-		} else {
-			hashes[hash] = []string{upload.ContentFileName}
-		}
-	}
-
-	for hash, files := range hashes {
-		if len(files) == 1 {
-			continue
-		}
-
-		if logger != nil {
-			logger.Printf("found %d duplicates with hash %q: %s", len(files), hash, files)
-		}
-
-		keep := files[0]
-
-		for _, link := range files[1:] {
-			if logger != nil {
-				logger.Printf("removing %q (to replace with link)", link)
-			}
-			err := os.Remove(link)
-			if err != nil {
-				return fmt.Errorf("could not remove %q: %s", link, err)
-			}
-
-			if logger != nil {
-				logger.Printf("linking %q to %q", link, keep)
-			}
-			err = os.Symlink(path.Base(keep), link)
-			if err != nil {
-				return fmt.Errorf("could not link %q to %q: %s", link, keep, err)
-			}
-		}
-	}
-
-	return nil
 }

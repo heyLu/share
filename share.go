@@ -39,16 +39,6 @@ func main() {
 	config.UploadsLimit = 10 * time.Second
 	config.MaxUploadSize = 50 * MegaBytes
 
-	uploadsRepo := upload.NewDirectoryRepo(config.UploadsDir)
-	if len(os.Args) > 1 && os.Args[1] == "deduplicate" {
-		err := upload.Deduplicate(uploadsRepo, &simpleLogger{})
-		if err != nil {
-			log.Fatalf("could not deduplicate: %s", err)
-		}
-
-		return
-	}
-
 	config.BaseURL = os.Getenv("BASE_URL")
 	if config.BaseURL == "" {
 		config.BaseURL = fmt.Sprintf("http://%s", config.Addr)
@@ -345,6 +335,7 @@ func main() {
 				return
 			}
 
+			uploadsRepo := upload.NewDirectoryRepo(config.UploadsDir)
 			uploads, err := uploadsRepo.List()
 			if err != nil {
 				logRequest(req, http.StatusInternalServerError, fmt.Sprintf("could not list uploads: %s", err))
@@ -501,10 +492,4 @@ func (c *ByNameCounter) Get(name string) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.countsByName[name]
-}
-
-type simpleLogger struct {}
-
-func (l *simpleLogger) Printf(format string, args ...interface{}) {
-	fmt.Printf(format+"\n", args...)
 }
