@@ -348,9 +348,14 @@ func main() {
 				formatBytes(int64(statsCounter.Get("bytes-written"))))
 			fmt.Fprintln(w)
 
+			totalSize := int64(0)
 			for _, upload := range uploads {
+				totalSize += upload.Size
 				fmt.Fprintf(w, "- %s/dl/%s/%s (%s, %d views, %d downloads)\n", config.BaseURL, upload.ID, upload.FileName, formatBytes(upload.Size), statsCounter.Get("visit-"+upload.ID), statsCounter.Get("dl-"+upload.ID))
 			}
+			fmt.Fprintln(w)
+			fmt.Fprintf(w, "(%s total)\n", formatBytes(totalSize))
+
 			logRequest(req, http.StatusOK, "")
 		})
 	}
