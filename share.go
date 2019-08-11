@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/heyLu/share/upload"
 )
 
 const MegaBytes int64 = 1024 * 1024
@@ -188,7 +190,7 @@ func main() {
 		}
 		id := fmt.Sprintf("%x", data)
 
-		uploadInfo := UploadInfo{
+		uploadInfo := upload.Info{
 			ID:           id,
 			FileName:     header.Filename,
 			ContentType:  header.Header.Get("Content-Type"),
@@ -261,7 +263,7 @@ func main() {
 			}
 			defer f.Close()
 
-			var uploadInfo UploadInfo
+			var uploadInfo upload.Info
 			dec := json.NewDecoder(f)
 			err = dec.Decode(&uploadInfo)
 			if err != nil {
@@ -333,7 +335,7 @@ func main() {
 				return
 			}
 
-			uploadsRepo := NewDirectoryUploadsRepo(config.UploadsDir)
+			uploadsRepo := upload.NewDirectoryRepo(config.UploadsDir)
 			uploads, err := uploadsRepo.List()
 			if err != nil {
 				logRequest(req, http.StatusInternalServerError, fmt.Sprintf("could not list uploads: %s", err))
@@ -411,86 +413,6 @@ func formatBytes(bytes int64) string {
 		}
 		return fmt.Sprintf("%.1fgb", float64(bytes)/(1024*1024*1024))
 	}
-}
-
-type UploadsRepository interface {
-	List() ([]UploadInfo, error)
-	GetInfo(id string) (*UploadInfo, error)
-}
-
-type UploadInfo struct {
-	ID           string    `json:"id"`
-	FileName     string    `json:"filename"`
-	ContentType  string    `json:"content-type"`
-	DateUploaded time.Time `json:"date-uploaded"`
-	Size         int64     `json:"-"`
-}
-
-func NewDirectoryUploadsRepo(uploadsDirectory string) UploadsRepository {
-	return &directoryUploadsRepo{directory: uploadsDirectory}
-}
-
-type directoryUploadsRepo struct {
-	directory string
-}
-
-func (ur *directoryUploadsRepo) List() ([]UploadInfo, error) {
-	dir, err := os.Open(ur.directory)
-	if err != nil {
-		return nil, fmt.Errorf("could not open uploads directory: %s", err)
-	}
-
-	files, err := dir.Readdir(-1)
-	if err != nil {
-		return nil, fmt.Errorf("could not list uploads: %s", err)
-	}
-
-	uploads := make([]UploadInfo, 0, len(files)/2)
-	for _, fi := range files {
-		if !strings.HasSuffix(fi.Name(), "-info.json") {
-			continue
-		}
-
-		id := fi.Name()[:(len(fi.Name()) - len("-info.json"))]
-		info, err := ur.GetInfo(id)
-		if err != nil {
-			return nil, fmt.Errorf("could not read info for %s: %s", id, err)
-		}
-		if info == nil {
-			return nil, fmt.Errorf("could not find info for %s: %s", id, err)
-		}
-
-		stat, err := os.Lstat(path.Join(ur.directory, id))
-		if err != nil {
-			return nil, fmt.Errorf("could not lstat %s: %s", id, err)
-		}
-		info.Size = stat.Size()
-
-		uploads = append(uploads, *info)
-	}
-
-	return uploads, nil
-}
-
-func (ur *directoryUploadsRepo) GetInfo(id string) (*UploadInfo, error) {
-	f, err := os.Open(path.Join(ur.directory, id+"-info.json"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-
-		return nil, fmt.Errorf("could not open info: %s", err)
-	}
-	defer f.Close()
-
-	var uploadInfo UploadInfo
-	dec := json.NewDecoder(f)
-	err = dec.Decode(&uploadInfo)
-	if err != nil {
-		return nil, fmt.Errorf("could not decode upload info: %s", err)
-	}
-
-	return &uploadInfo, nil
 }
 
 // RateLimiter limits something to be allowed only every duration.
