@@ -1,5 +1,9 @@
 # share - share files
 
+A tiny personal minimalistic file-sharing service.  Written in Go, minimal dependencies.
+
+![A screenshort of the page](./screenshot.png)
+
 ## Configuration
 
 - `BASE_URL` (environment)
