@@ -22,6 +22,8 @@ import (
 
 const MegaBytes int64 = 1024 * 1024
 
+const DeleteAfter time.Duration = 14 * 24 * time.Hour
+
 var config struct {
 	AdminSecret   string
 	Addr          string
@@ -367,12 +369,43 @@ func main() {
 		http.ServeFile(w, req, "./validation.js")
 	})
 
+	go deleteExpiredUploads(config.UploadsDir)
+
 	srv := &http.Server{
 		Addr:              config.Addr,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	log.Printf("Listening on %s", config.BaseURL)
 	log.Fatal(srv.ListenAndServe())
+}
+
+func deleteExpiredUploads(uploadsDir string) {
+	repo := upload.NewDirectoryRepo(uploadsDir)
+
+	for {
+		time.Sleep(5 * time.Minute)
+
+		infos, err := repo.List()
+		if err != nil {
+			log.Printf("Error: could not list uploads: %s", err)
+			continue
+		}
+
+		for _, info := range infos {
+			if time.Since(info.DateUploaded) < DeleteAfter {
+				continue
+			}
+
+			err := repo.Delete(info.ID)
+			if err != nil {
+				log.Printf("Error: could not delete upload %q: %s", info.ID, err)
+				continue
+			}
+
+			log.Printf("Deleted %q (was created %s ago)", info.ID, time.Since(info.DateUploaded))
+		}
+
+	}
 }
 
 func logRequest(req *http.Request, statusCode int, msg string) {

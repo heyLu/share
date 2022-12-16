@@ -20,6 +20,7 @@ type Info struct {
 type Repo interface {
 	List() ([]Info, error)
 	GetInfo(id string) (*Info, error)
+	Delete(id string) error
 }
 
 func NewDirectoryRepo(uploadsDirectory string) Repo {
@@ -88,4 +89,18 @@ func (ur *directoryRepo) GetInfo(id string) (*Info, error) {
 	}
 
 	return &uploadInfo, nil
+}
+
+func (ur *directoryRepo) Delete(id string) error {
+	err := os.Remove(path.Join(ur.directory, id))
+	if err != nil {
+		return fmt.Errorf("could not delete content: %w", err)
+	}
+
+	err = os.Remove(path.Join(ur.directory, id+"-info.json"))
+	if err != nil {
+		return fmt.Errorf("could not delete metadata: %w", err)
+	}
+
+	return nil
 }
