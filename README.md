@@ -22,7 +22,7 @@ A tiny personal minimalistic file-sharing service.  Written in Go, minimal depen
 - [x] upload only with password
 - [x] upload rate limiting
 - [ ] set content type for downloads
-- [ ] delete files after N days
+- [x] delete files after N days
 - [x] admin stats (rate limiting, uploads, num downloads)
 - [ ] password encryption (optional, encrypted with password on disk, crypto/aes?)
 	- seems extremely tricky, consider using WebCryptoAPI implementation from firefox send?
