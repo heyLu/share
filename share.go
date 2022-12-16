@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -35,9 +36,10 @@ var config struct {
 }
 
 func main() {
-	config.Addr = "localhost:9999"
+	flag.StringVar(&config.Addr, "addr", "localhost:9999", "The address the server is listening on.")
+	flag.StringVar(&config.UploadsDir, "uploads-dir", "./uploads/", "The directory to store the uploads in.")
+	flag.Parse()
 
-	config.UploadsDir = "uploads"
 	config.UploadsLimit = 10 * time.Second
 	config.MaxUploadSize = 50 * MegaBytes
 

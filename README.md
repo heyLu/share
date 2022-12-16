@@ -6,18 +6,26 @@ A tiny personal minimalistic file-sharing service.  Written in Go, minimal depen
 
 ## Configuration
 
+- command line:
+
+	```
+	-addr string
+	      The address the server is listening on. (default "localhost:9999")
+	-uploads-dir string
+	      The directory to store the uploads in. (default "./uploads/")
+	```
 - `BASE_URL` (environment)
 - `upload-secret.txt` (a secret string that needs to be specified to be able to upload)
-	- empty by default
+	- empty by default, allowing uploads by everyone
+- `admin-secret.txt` (optional, allows viewing usage stats at `/stats` with user `admin` + admin-secret)
 - code-only:
 	- max upload size (50mb)
-	- uploads directory (`./uploads`)
 	- rate limit (1 upload request per 10 seconds)
 	- expiry (14 days)
 
 ## Features
 
-(Unchecked items are not implemented yet.
+(Unchecked items are not implemented yet.)
 
 - [x] upload only with password
 - [x] upload rate limiting
