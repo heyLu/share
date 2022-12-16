@@ -35,6 +35,7 @@ func (ur *directoryRepo) List() ([]Info, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not open uploads directory: %s", err)
 	}
+	defer dir.Close()
 
 	files, err := dir.Readdir(-1)
 	if err != nil {

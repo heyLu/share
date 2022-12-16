@@ -219,6 +219,7 @@ func main() {
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
+		defer f.Close()
 
 		_, err = io.Copy(f, file)
 		if err != nil {
