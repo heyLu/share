@@ -12,6 +12,8 @@ USER share
 
 VOLUME /uploads
 
+WORKDIR /app
+
 CMD /app/share -addr 0.0.0.0:9999 -uploads-dir /uploads
 
 COPY --from=builder /build/share /app/
