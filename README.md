@@ -4,6 +4,14 @@ A tiny personal minimalistic file-sharing service.  Written in Go, minimal depen
 
 ![A screenshort of the page](./screenshot.png)
 
+## Try it out!
+
+```
+docker run -it --rm ghcr.io/heyLu/share:main
+```
+
+Alternatively, clone the repo and run it using `go run .`.
+
 ## Configuration
 
 - command line:
