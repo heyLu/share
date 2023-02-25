@@ -8,9 +8,11 @@ RUN go build .
 FROM alpine:3.16
 
 RUN apk add --no-cache shadow && useradd --home-dir /dev/null --shell /bin/false share && apk del shadow
-USER share
 
+RUN mkdir /uploads && chown share:share /uploads
 VOLUME /uploads
+
+USER share
 
 WORKDIR /app
 

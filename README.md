@@ -7,7 +7,7 @@ A tiny personal minimalistic file-sharing service.  Written in Go, minimal depen
 ## Try it out!
 
 ```
-docker run -it --rm ghcr.io/heylu/share:main
+docker run -it --rm -p 9999:9999 ghcr.io/heylu/share:main
 ```
 
 Alternatively, clone the repo and run it using `go run .`.
