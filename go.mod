@@ -1,7 +1,5 @@
 module github.com/heyLu/share
 
-go 1.23
+go 1.24.0
 
-toolchain go1.23.4
-
-require golang.org/x/crypto v0.32.0
+require golang.org/x/crypto v0.45.0
